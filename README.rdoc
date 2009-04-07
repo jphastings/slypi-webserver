@@ -20,6 +20,7 @@ Yes! Please do! Its not hard, basically its a combination of XPath and Regular e
 
 == How Do I Get in Touch?
 Send me a message via:
+
 githib::	http://github.com/jphastings/
 twitter::	@jphastings
 facebook::	http://facebook.com/profile.php?id=36800401
