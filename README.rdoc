@@ -1,0 +1,26 @@
+= SlyPI
+A local-only server that allows webservice-like access to websites without official APIs.
+
+== How does it work
+The server on your computer will take http requests (on port 15685), look up the data requested from external websites and provide the result in a concise and machine-ready format (currently YAML or JSON).
+
+There are examples in the repository here, but I should remind you that this application is essentially a website scraper. Many websites (including some of those in the examples) *do not allow* such handling of their data. If you do use this application to scrape websites that do not allow these methods then you do so _at your own risk_. Please be nice to the websites too, this application can potentially cause a very large amount of traffic, even with its internal caching.
+
+== Why the Silly Name
+Meh. Its a sly programming interface? You think of something better!
+
+== Installation/Use
+You don't really install it, you just download these files and do:
+	ruby slypi.rb
+
+Please bear in mind you'll need port 15685 available or it'll cry at you.
+
+== Can I Develop My Own Modules?
+Yes! Please do! Its not hard, basically its a combination of XPath and Regular expressions. You can poke through the examples until I get round to writing a how-to, but please feel free to get in touch if you'd like help (I'm more inclined to do more if anyone actually wants this app bar me!)
+
+== How Do I Get in Touch?
+Send me a message via:
+githib:	http://github.com/jphastings/
+twitter:	@jphastings
+facebook:	http://facebook.com/profile.php?id=36800401
+email:	slypi@projects.kedakai.co.uk
