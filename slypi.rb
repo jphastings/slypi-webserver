@@ -7,8 +7,6 @@ require "fileutils"
 
 require "open-uri" # Temporary Require
 
-server = Mongrel::HttpServer.new("127.0.0.1", "15685")
-
 class String
   def inner_text;self;end
 end
@@ -158,37 +156,77 @@ end
 
 class ApisServer < Mongrel::HttpHandler
   def process(req,res)
-    
+    res.start(200) do |head,out|
+      head['Content-type'] = "text/html"
+      out.write "<h1>List of Installed APIs</h1><pre>"
+      out.write YAML::dump($apis)
+      out.write "</pre>"
+    end
   end
 end
 
 class InstallServer < Mongrel::HttpHandler
   def process(req,res)
-    puts "Install Request:"
-    p req.params
+    res.start(501) do |head,out|
+      out.write "Sorry guys, I've not yet implemented live-installations!"
+    end
   end
 end
 
+def installAPI(api)
+  $apis[api['slypi_internal_name']] = api['About']
+  
+  $server.register("/apis/"+api['slypi_internal_name'],AboutServer.new(api['About']))
+  api['Functions'].each do |function|
+    $server.register("/apis/#{api['slypi_internal_name']}/#{function[0]}.",FunctionServer.new(function[1]))
+    FileUtils.mkdir_p("cache/#{api['slypi_internal_name']}/#{function[0]}/")
+  end
+end
+
+
+# Initialization Section
+
 $apis = {}
+
+$stdout.puts "Server initializing..."
+begin
+  $server = Mongrel::HttpServer.new("127.0.0.1", "15685")
+rescue Errno::EADDRINUSE
+  begin
+    $stderr.puts "Error: You seem to have another copy of SlyPI running already. Please close it before trying again." if open("http://127.0.0.1:15685/version").read.match(/^SlyPI/)
+  rescue
+    $stderr.puts "Error: You appear to have another service running on port 15685.\n       It does not appear to be a copy of SlyPI, please close that application before running SlyPI again."
+  end
+  Process.exit()
+end
+$server.register("/",Mongrel::DirHandler.new("./docs/"))
 
 Dir.glob("apis/*.api").each do |apifile|
   api = YAML::load(open(apifile).read)
   if (not api['About'].nil?) and api['Functions'].length > 0
-    $apis[apifile.gsub(/^apis\/(.+)\.api$/,'\\1')] = api['About']
-    
-    server.register("/"+apifile.gsub(/\.api$/,''),AboutServer.new(api['About']))
-    api['Functions'].each do |function|
-      server.register("/"+apifile.gsub(/\.api$/,'')+'/'+function[0]+".",FunctionServer.new(function[1]))
-      FileUtils.mkdir_p(apifile.gsub(/^apis\/(.+)\.api$/,"cache/\\1/#{function[0]}/"))
-    end
+    api['slypi_internal_name'] = apifile.gsub(/^apis\/(.+)\.api$/,'\\1')
+    installAPI(api)
+    $stdout.puts " - Loaded module '#{api['slypi_internal_name']}'"
   else
-    $stderr.write "The SlyPI '#{apifile}' failed to load correctly. It appears to be an invalid file."
+    $stderr.puts "Error: The SlyPI '#{apifile}' failed to load correctly. It appears to be an invalid file."
   end
 end
 
-server.register("/apis",ApisServer.new)
-server.register("/",Mongrel::DirHandler.new("./docs/"))
+$server.register("/apis",ApisServer.new)
 
-server.register("/install/",InstallServer.new)
+warn "Warning: Live install features are not implemented yet!"
+$server.register("/install/",InstallServer.new)
 
-server.run.join
+$stdout.puts "Server started! Please check http://127.0.0.1:15685/ for information."
+
+killServer = Proc.new {
+  $stdout.puts "Closing the SlyPI server"
+  $server.stop
+  $stdout.puts " - All good, Sayounara!"
+}
+
+Signal.trap("INT",killServer)
+Signal.trap("TERM",killServer)
+Signal.trap("HUP") { $stdout.puts "HUP signal caught, keeping the server running" }
+
+$server.run.join
