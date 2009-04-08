@@ -1,3 +1,4 @@
+#!/usr/bin/env ruby
 require "rubygems"
 require "hpricot"
 require "mongrel"
@@ -136,8 +137,8 @@ class FunctionServer < Mongrel::HttpHandler
 end
 
 class AboutServer < Mongrel::HttpHandler
-  def initialize(about)
-    @about = about
+  def initialize(api)
+    @api = api
   end
   
   def process(req,res)
@@ -149,7 +150,9 @@ class AboutServer < Mongrel::HttpHandler
       return
     end
     res.start(200) do |head,out|
-      out.write YAML::dump(@about)
+      out.write YAML::dump(@api['About'])
+      out.write "Available Functions:"
+      out.write YAML::dump(@api['Functions'].to_a.collect{|f| f[0]})
     end
   end
 end
@@ -176,7 +179,7 @@ end
 def installAPI(api)
   $apis[api['slypi_internal_name']] = api['About']
   
-  $server.register("/apis/"+api['slypi_internal_name'],AboutServer.new(api['About']))
+  $server.register("/apis/"+api['slypi_internal_name'],AboutServer.new(api))
   api['Functions'].each do |function|
     $server.register("/apis/#{api['slypi_internal_name']}/#{function[0]}.",FunctionServer.new(function[1]))
     FileUtils.mkdir_p("cache/#{api['slypi_internal_name']}/#{function[0]}/")
@@ -185,48 +188,70 @@ end
 
 
 # Initialization Section
-
-$apis = {}
-
-$stdout.puts "Server initializing..."
-begin
-  $server = Mongrel::HttpServer.new("127.0.0.1", "15685")
-rescue Errno::EADDRINUSE
+def startServer
+  $apis = {}
+  
+  $stdout.write "Server initializing... ".ljust(72)
+  STDOUT.flush
   begin
-    $stderr.puts "Error: You seem to have another copy of SlyPI running already. Please close it before trying again." if open("http://127.0.0.1:15685/version").read.match(/^SlyPI/)
-  rescue
-    $stderr.puts "Error: You appear to have another service running on port 15685.\n       It does not appear to be a copy of SlyPI, please close that application before running SlyPI again."
+    $server = Mongrel::HttpServer.new("127.0.0.1", "15685")
+  rescue Errno::EADDRINUSE
+    $stdout.puts "[\e[31;1mFAILED\e[0m]"
+    begin
+      $stderr.puts " - You seem to have another copy of SlyPI running already. Please close it before trying again." if open("http://127.0.0.1:15685/version").read.match(/^SlyPI/)
+    rescue
+      $stderr.puts " - You appear to have another service running on port 15685.\n       It does not appear to be a copy of SlyPI, please close that application before running SlyPI again."
+    end
+    Process.exit()
   end
-  Process.exit()
-end
-$server.register("/",Mongrel::DirHandler.new("./docs/"))
-
-Dir.glob("apis/*.api").each do |apifile|
-  api = YAML::load(open(apifile).read)
-  if (not api['About'].nil?) and api['Functions'].length > 0
-    api['slypi_internal_name'] = apifile.gsub(/^apis\/(.+)\.api$/,'\\1')
-    installAPI(api)
-    $stdout.puts " - Loaded module '#{api['slypi_internal_name']}'"
-  else
-    $stderr.puts "Error: The SlyPI '#{apifile}' failed to load correctly. It appears to be an invalid file."
+  $server.register("/",Mongrel::DirHandler.new("./docs/"))
+  
+  $stdout.puts ""
+  
+  Dir.glob("apis/*.api").each do |apifile|
+    apiname = apifile.gsub(/^apis\/(.+)\.api$/,'\\1')
+    $stdout.write " - Loading module: '#{apiname}'... ".ljust(72)
+    STDOUT.flush
+    api = YAML::load(open(apifile).read)
+    if (not api['About'].nil?) and api['Functions'].length > 0
+      api['slypi_internal_name'] = apiname
+      installAPI(api)
+      $stdout.puts "[ \e[37;1mDONE\e[0m ]"
+    else
+      $stdout.puts "[\e[31;1mFAILED\e[0m]"
+      $stderr.puts " x Try downloading this API again"
+    end
   end
+
+  $server.register("/apis",ApisServer.new)
+  
+  $server.register("/install/",InstallServer.new)
+  $stdout.puts "Server initializing... ".ljust(72)+"[ \e[37;1mDONE\e[0m ]\n - Please check \e[4mhttp://127.0.0.1:15685/\e[0m for information."
+  $stderr.puts " x Warning: Live install features are not implemented yet!"  
 end
 
-$server.register("/apis",ApisServer.new)
-
-warn "Warning: Live install features are not implemented yet!"
-$server.register("/install/",InstallServer.new)
-
-$stdout.puts "Server started! Please check http://127.0.0.1:15685/ for information."
-
-killServer = Proc.new {
-  $stdout.puts "Closing the SlyPI server"
+def killServer
+  $stdout.write "\nClosing the SlyPI server... ".ljust(73)
+  STDOUT.flush
   $server.stop
-  $stdout.puts " - All good, Sayounara!"
-}
+  $stdout.puts "[ \e[32;1mDONE\e[0m ]"
+end
 
-Signal.trap("INT",killServer)
-Signal.trap("TERM",killServer)
+def restartServer
+   killServer
+   startServer
+   $server.run.join 
+end
+
+def $stderr.puts(text)
+  super("\e[31m#{text}\e[0m")
+end
+
+startServer
+
+Signal.trap("INT") { killServer }
+Signal.trap("TERM") { killServer }
+Signal.trap("CONT") { restartServer }
 Signal.trap("HUP") { $stdout.puts "HUP signal caught, keeping the server running" }
 
 $server.run.join
